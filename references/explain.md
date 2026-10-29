@@ -4,14 +4,14 @@ Use this when the owner asks where the yield comes from or what can go wrong.
 
 ## Where the yield comes from
 
-- Lenders put USDC into a shared pool on Aave and get aUSDC back. The aUSDC balance
-  grows every block as interest arrives; that growth is the yield.
+- Lenders put USDC into a shared pool and get a receipt back (aUSDC on Aave). The
+  receipt's balance grows as interest arrives; that growth is the yield.
 - Borrowers post collateral worth more than they borrow (for example $10,000 of ETH to
   borrow up to about $7,500 of USDC) and pay interest into the pool.
 - If a borrower's collateral falls too far, it is sold off to repay the loan. That is
   what keeps lenders whole.
 - The rate follows demand: the more of the pool is borrowed, the higher the rate.
-  Roughly, lender rate = borrow rate × share borrowed × (1 − Aave's cut). A 5% borrow
+  Roughly, lender rate = borrow rate × share borrowed × (1 − the venue's cut). A 5% borrow
   rate with 80% borrowed and a 10% cut pays lenders about 3.6%.
 - Who borrows: traders using leverage, people looping yield strategies, and people who
   want cash without selling their crypto. Rates are higher when markets are busy.
@@ -24,7 +24,8 @@ Use this when the owner asks where the yield comes from or what can go wrong.
   usually fixes it within hours.
 - **Bad debt.** If prices crash faster than collateral can be sold, the pool can take
   a loss.
-- **Smart contracts.** Aave is long-running and audited, but no contract is risk-free.
+- **Smart contracts.** No contract is risk-free, however long-running and audited.
+  Each venue's own risks are in `references/<venue>.md`.
 - **No insurance.** This is not a bank account and has no deposit protection.
 
 ## Worked example

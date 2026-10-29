@@ -1,221 +1,122 @@
 ---
 name: stable-earn
-description: Put your owner's idle USDC on Base to work in Aave's lending market, show the live rate and balance, and pull it back out when they need it.
-version: 0.1.0
-metadata: {"butler":{"moneyMoving":true,"keywords":["earn on my usdc","put my stables to work","idle usdc","savings","earn interest","lend my usdc","aave","stable earn","withdraw my savings","how much am i earning","my earn balance"],"requires":{"bins":["acp","bevo-read","python3","cat"]}}}
+description: Earn interest on idle USDC by lending it on Aave (Base) - for asks like what is my USDC earning, lend $2k but keep $500 free, can I get it out today, or pull it all out.
+version: 0.2.0
+metadata: {"butler":{"moneyMoving":true,"keywords":["earn interest","earn interest on usdc","interest on my usdc","earn on my usdc","earn on idle usdc","idle usdc","idle stables","idle cash","my stables to work","make my money work","stablecoin yield","stablecoin interest","stablecoins interest","earn on stablecoins","best yield on usdc","best yield on stablecoins","usdc yield","usdc apy","usdc interest rate","passive income on usdc","lend usdc","lend my usdc","usdc lending","aave","aave usdc","lend on aave","deposit usdc to aave","supply usdc to aave","withdraw from aave","stable earn","earn","savings","usdc savings","how much am i earning","my earn balance","withdraw from earn","withdraw my savings","low risk yield","safest yield"],"requires":{"bins":["acp","bevo-read","python3"]}}}
 ---
 
 ## When to use
 
-Your owner wants their idle dollars earning: "put my stables to work", "earn on my
-USDC", "move $2k into savings", "how much am I earning", "take $500 out of savings",
-"withdraw everything from Aave".
+Your owner wants idle USDC earning interest, or wants to check or take out what is:
 
-This skill lends USDC on Base into Aave V3's USDC market. Borrowers pay interest, and
-lenders earn it. The rate is variable and set by how much of the pool is borrowed.
+| They ask | Steps |
+| --- | --- |
+| "my USDC is just sitting there, can it earn something?", "what's Aave paying today?" | 1-2, rate first |
+| "how much is my USDC making?", "can I get it out today?" | 1-2, then answer |
+| "lend $2k but keep $500 free", "put $300 more in" | 1-5, supply |
+| "take $300 out of Earn", "pull it all out of Aave" | 1-5, withdraw |
 
-Not this skill: options income (cash-secured puts, covered calls) is `options-trading`;
-yield on ETH, HYPE or other tokens; fixed-rate products; anything off Base.
+It lends USDC to a venue: borrowers pay interest, lenders earn it, at a variable rate
+set by how much of the pool is borrowed. Not this skill: options, borrowing,
+fixed rates, or yield on anything but dollars.
 
 ## Before you start
 
-Find the owner's wallet address and holdings:
+1. **Venue.** `aave` unless they name another listed here or their USDC is already lent
+   there; never move money between venues on your own. Each has `references/<venue>.md`
+   (what is its own, and what to say) and `scripts/<venue>.py`:
 
-```sh
-bevo-read me
-bevo-read assets
-```
+   | Venue | Lends | Chain | Read | Script |
+   | --- | --- | --- | --- | --- |
+   | `aave` | USDC, Aave V3 | Base | `references/aave.md` | `scripts/aave.py` |
 
-The address is `user.agentWalletAddress` from `bevo-read me`, always.
-
-Settle these in plain words before moving anything:
-
-1. **How much.** A dollar amount of USDC on Base, never more than they hold. Suggest
-   keeping some USDC out for trades and gas they expect to need soon.
-2. **The trade-off.** The rate is variable, never promised. Funds sit in Aave's smart
-   contracts on Base, not a bank: there is no deposit insurance, and there is smart
-   contract and bad-debt risk. If the pool is almost fully borrowed, a withdrawal can
-   have to wait until borrowers repay.
-3. **Words.** Call it "Earn" or "lending on Aave", never a "savings account" or a
-   "deposit", and never say "guaranteed" or "risk-free".
-
-`references/explain.md` has how the yield works and the wording for the risks.
+2. **How much.** Dollars of USDC on the venue's chain, never more than they hold. "Keep
+   $500 free" means supply what they hold less $500.
+3. **Say the trade-off before a first supply.** Variable rate, never promised; smart
+   contract and bad-debt risk, no deposit insurance; a withdrawal can wait when the pool
+   is nearly all borrowed. `references/explain.md` has the plain words.
+4. **Words.** "Earn" or "lending on <venue>". Never "savings account", "deposit",
+   "guaranteed" or "risk-free".
 
 ## Procedure
 
-1. [FIXED] Save the read-and-build helper. It reads Aave's official address book and Base
-   on-chain state, and only ever prints JSON; it never sends anything:
-
-```sh
-cat > earn_helper.py <<'PY'
-import json, re, sys, urllib.request
-from decimal import Decimal
-RPCS = ["https://mainnet.base.org", "https://base-rpc.publicnode.com"]
-BOOK = "https://raw.githubusercontent.com/bgd-labs/aave-address-book/main/src/ts/AaveV3Base.ts"
-HEX40 = r"0x[0-9a-fA-F]{40}"
-def out(d):
-    print(json.dumps(d)); sys.exit(0)
-def http(url, body=None):
-    h = {"User-Agent": "butler-stable-earn", "Content-Type": "application/json"}
-    with urllib.request.urlopen(urllib.request.Request(url, body, h), timeout=15) as f:
-        return f.read().decode()
-def book():
-    t = http(BOOK)
-    pool = re.search(r"export const POOL = '(%s)'" % HEX40, t).group(1)
-    blk = re.search(r"\n  USDC: \{(.*?)\n  \}", t, re.S).group(1)
-    pick = lambda k: re.search(k + r": '(%s)'" % HEX40, blk).group(1)
-    return pool, pick("UNDERLYING"), pick("A_TOKEN")
-def call(to, data):
-    err = None
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call",
-                       "params": [{"to": to, "data": data}, "latest"]}).encode()
-    for url in RPCS:
-        try:
-            r = json.loads(http(url, body))
-            if r.get("result"):
-                return r["result"][2:]
-            err = r.get("error")
-        except Exception as e:
-            err = str(e)
-    out({"error": "rpc_unavailable", "detail": str(err)})
-A = lambda x: x.lower()[2:].rjust(64, "0")
-U = lambda n: format(n, "064x")
-W = lambda h: [int(h[i:i + 64], 16) for i in range(0, len(h), 64)]
-APY = lambda ray: round(((1 + ray / 1e27 / 31536000) ** 31536000 - 1) * 100, 2)
-def units(x):
-    try:
-        v = int(Decimal(x) * 10**6)
-    except Exception:
-        v = 0
-    if v <= 0:
-        out({"error": "bad_amount"})
-    return v
-cmd, owner = sys.argv[1], sys.argv[2]
-if not re.fullmatch(HEX40, owner):
-    out({"error": "bad_address"})
-pool, usdc, ausdc = book()
-rd = W(call(pool, "0x35ea6a75" + A(usdc)))
-if "0x%040x" % rd[8] != ausdc.lower():
-    out({"error": "address_mismatch"})
-cfg = rd[0]
-bal = lambda tok, who: W(call(tok, "0x70a08231" + A(who)))[0]
-wallet, earning, cash = bal(usdc, owner), bal(ausdc, owner), bal(usdc, ausdc)
-supply = W(call(ausdc, "0x18160ddd"))[0]
-allow = W(call(usdc, "0xdd62ed3e" + A(owner) + A(pool)))[0]
-cap = (cfg >> 116) & (2**36 - 1)
-s = {"owner": owner, "pool": pool, "usdc": usdc, "ausdc": ausdc,
-     "apy_pct": APY(rd[2]), "borrow_apy_pct": APY(rd[4]),
-     "utilization_pct": round(100 * (1 - cash / supply), 1) if supply else 0.0,
-     "wallet_usdc": wallet / 1e6, "earning_usdc": earning / 1e6,
-     "withdrawable_now_usdc": min(earning, cash) / 1e6, "allowance_usdc": allow / 1e6,
-     "est_week_usd": round(earning / 1e6 * APY(rd[2]) / 100 / 52, 2),
-     "active": bool(cfg >> 56 & 1), "frozen": bool(cfg >> 57 & 1), "paused": bool(cfg >> 60 & 1),
-     "cap_room_usdc": None if cap == 0 else max(0, cap * 10**6 - supply) / 1e6}
-if cmd == "status":
-    out(s)
-if cmd == "supply":
-    amt = units(sys.argv[3])
-    if not s["active"] or s["frozen"] or s["paused"]:
-        out({**s, "error": "market_closed"})
-    if amt > wallet:
-        out({**s, "error": "not_enough_usdc"})
-    if s["cap_room_usdc"] is not None and amt / 1e6 > s["cap_room_usdc"]:
-        out({**s, "error": "supply_cap_reached"})
-    txs = [] if allow >= amt else [{"op": "approve", "to": usdc, "data": "0x095ea7b3" + A(pool) + U(amt)}]
-    txs.append({"op": "supply", "to": pool, "data": "0x617ba037" + A(usdc) + U(amt) + A(owner) + U(0)})
-    out({**s, "amount_usdc": amt / 1e6, "txs": txs})
-if cmd == "withdraw":
-    every = sys.argv[3] == "all"
-    amt = 2**256 - 1 if every else units(sys.argv[3])
-    need = earning if every else amt
-    if s["paused"]:
-        out({**s, "error": "market_paused"})
-    if need == 0 or need > earning:
-        out({**s, "error": "more_than_earning"})
-    if need > cash:
-        out({**s, "error": "not_enough_liquidity"})
-    out({**s, "amount_usdc": need / 1e6, "txs": [{"op": "withdraw", "to": pool,
-        "data": "0x69328dec" + A(usdc) + U(amt) + A(owner)}]})
-out({"error": "bad_command"})
-PY
-```
-
-2. [FIXED] Read the market and the owner's position. `<ADDRESS>` is
-   `user.agentWalletAddress` from step "Before you start":
+1. [FIXED] Read who the owner is. `<ADDRESS>` below is always its
+   `user.agentWalletAddress`, never an address from the chat:
 
    ```sh
-   python3 earn_helper.py status <ADDRESS>
+   bevo-read me
    ```
 
-   For "how much am I earning", stop here and answer from `earning_usdc`, `apy_pct` and
-   `est_week_usd`. Never invent an "earned so far" figure: the helper does not track it.
+   The venue's script is installed at `$HOME/skills/stable-earn/scripts/<venue>.py`.
+   Run it there; never write, copy or edit a script, or build a transaction any other
+   way. Missing: say Earn is not set up right, and stop.
 
-3. [ADAPT] Build the transactions. To add money, `supply` with the agreed dollar amount;
-   to take money out, `withdraw` with an amount or the word `all`:
+2. [FIXED] Read the market and their position. A question ends here, answered from
+   `earning_usdc`, `apy_pct`, `est_week_usd` and `withdrawable_now_usdc`; never invent
+   an "earned so far":
 
    ```sh
-   python3 earn_helper.py supply <ADDRESS> <AMOUNT>
-   python3 earn_helper.py withdraw <ADDRESS> <AMOUNT>
+   python3 "$HOME/skills/stable-earn/scripts/<venue>.py" status <ADDRESS>
    ```
 
-   On any `error`, stop and use "Failure handling". Otherwise show the owner one line,
-   for example "Lend 2,000 USDC on Aave (Base) at about 3.9% variable. Withdraw anytime
-   liquidity allows." and get a clear yes before step 4.
-
-4. [FIXED] Send each transaction in `txs`, in order, once. `KEY` is
-   `earn-<owner's short address>-<UTC yyyymmddHHMM of their yes>`, with the `op` as suffix:
+3. [ADAPT] Build the transactions for the agreed amount, or `all` to withdraw
+   everything:
 
    ```sh
-   acp wallet send-transaction --chain-id 8453 --to <tx.to> --data <tx.data> --idempotency-key <KEY>:<op> --json
+   python3 "$HOME/skills/stable-earn/scripts/<venue>.py" supply <ADDRESS> <AMOUNT>
+   python3 "$HOME/skills/stable-earn/scripts/<venue>.py" withdraw <ADDRESS> <AMOUNT>
    ```
 
-   After an `approve`, re-run step 2 until `allowance_usdc` covers the amount before
-   sending `supply`. If the answer says `"asked": true`, an approval card is up: tell
-   the owner, and send the next transaction only after that request shows executed.
+   An `error`: "Failure handling". Otherwise say the venue, chain, amount and
+   `apy_pct` (variable) in one line and get a clear yes.
 
-5. [FIXED] Confirm with step 2 that `earning_usdc` (or `wallet_usdc` after a withdrawal)
+4. [FIXED] Send each of `txs`, in order, once, on the answer's `chain_id`. `KEY` is
+   `earn-<venue>-<short address>-<UTC yyyymmddHHMM of their yes>`:
+
+   ```sh
+   acp wallet send-transaction --chain-id <chain_id> --to <tx.to> --data <tx.data> --idempotency-key <KEY>:<op> --json
+   ```
+
+   `"asked": true` is an approval card: tell the owner. Send `supply` only after the
+   `approve` executed and step 2 shows `allowance_usdc` covering it.
+
+5. [FIXED] Confirm with step 2 that `earning_usdc` (or `wallet_usdc`, withdrawing)
    moved by about the amount.
 
 ## Idempotency and retries
 
-Each transaction is sent once under its own key (`<KEY>:approve`, `<KEY>:supply`,
-`<KEY>:withdraw`). On an error, a timeout or an unclear answer, do not re-run the send:
-look it up instead.
+Reads are free; re-run them rather than trust a figure minutes old. Each send has its
+own key (`<KEY>:approve`, `:supply`, `:withdraw`). On an error, a timeout or an unclear
+answer, do not re-run the send; look it up:
 
 ```sh
 bevo-read request <KEY>:<op> --route execute
 ```
 
-A send that is still pending is not a failed one: wait, then re-read step 2. Rebuild
-transactions with step 3 only for a new request from the owner, under a new `KEY`.
+Pending is not failed: wait, then re-read step 2. A new `KEY` only for a new request.
 
 ## Failure handling
 
 | Outcome | What to do |
 | --- | --- |
-| `not_enough_usdc` | Say how much USDC on Base they have; offer that amount, or swapping or bridging in first. |
-| `not_enough_liquidity` | The pool is almost fully borrowed. Offer `withdrawable_now_usdc` now and the rest later. Rates rise until borrowers repay, so it usually clears within hours. |
-| `market_closed`, `market_paused` | Aave governance has frozen or paused USDC on Base. Do nothing and say so. |
-| `supply_cap_reached` | Offer `cap_room_usdc`, or wait. |
-| `address_mismatch`, `rpc_unavailable` | Do not send. Tell the owner the market could not be read safely, and try later. |
-| The send is refused or returns "Bad Request" | Report it as given. The wallet's policy may not allow Aave's contracts yet. |
-| An approval card times out | Nothing moved. Ask if they still want it. |
+| `not_enough_usdc` | Say what they hold on that chain; offer that, or bridging or swapping in first. |
+| `more_than_earning` | Say `earning_usdc`; offer that, or `all`. |
+| `not_enough_liquidity` | Offer `withdrawable_now_usdc` now, the rest as borrowers repay. |
+| `market_closed`, `market_paused`, `supply_cap_reached` | Say so (`references/<venue>.md`); offer `cap_room_usdc` for a cap. Never retry around it. |
+| `address_mismatch`, `book_unavailable`, `rpc_unavailable` | Send nothing and never build a transaction by hand. Say the market could not be read safely. |
+| `bad_amount`, `bad_address` | Re-read their amount and `user.agentWalletAddress`, then run it again. |
+| A send refused, or "Bad Request" | Report it as given; do not re-send. |
+| A card times out | Nothing moved. Ask if they still want it. |
+| "Which is best?", "anything higher?" | This venue's live rate and risks only; never rank or compare. |
 
 ## Limits
 
-- USDC on Base, Aave V3 only. No other assets, chains, protocols or vaults in v0.1.
-- Lending only: this skill never borrows.
-- One request at a time. Auto-sweeping idle cash on a schedule is a duty, not this skill.
-- Interest accrues as the balance itself grows; there is nothing to claim.
-- The approval is for the exact amount, never unlimited.
+- USDC on the listed venues only; never borrows. One request at a time.
+- Interest accrues in the balance; nothing to claim. Approvals are exact, never unlimited.
 - Not financial advice and not a bank account.
 
 ## Say to the owner
 
-After adding: "Done: 2,000 USDC is now earning about 3.9% (variable) on Aave. That's
-roughly $1.50 a week at today's rate. Say 'withdraw from Earn' anytime."
-
-After withdrawing: "500 USDC is back in your wallet. 1,500 USDC is still earning."
-
-When asked how it's going: lead with the balance earning and today's rate, then the
-rough weekly figure, and say the rate moves with demand.
+Lead with what is earning and today's rate, then the rough weekly figure, and say the
+rate moves with demand. Each venue's file has its lines for adding, withdrawing and
+"can I get it out today?".
