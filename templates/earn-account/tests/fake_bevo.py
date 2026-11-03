@@ -1,8 +1,9 @@
 """A scripted stand-in for the `bevo` SDK, for running duty.py offline.
 
-`run(...)` installs a fresh fake as `bevo`, answers each `eth_call` from the
-chain it is given, makes the jitter sleep free, executes duty.py through its
-ticks, and returns the fake for assertions.
+`run(...)` installs a fresh fake as `bevo`, answers each shelled `bevo-rpc`
+eth_call from the chain it is given, printed as the real launcher prints it,
+makes the jitter sleep free, executes duty.py through its ticks, and returns
+the fake for assertions.
 """
 
 import importlib.util
@@ -64,9 +65,7 @@ class FakeBevo:
         self.statuses.append((next, values))
 
     def rpc(self, chain_id, method, params=None):
-        self.rpcs.append((chain_id, method))
-        call = params[0]
-        return self.answers[0](call["to"], call["data"])
+        raise AssertionError("bevo.rpc() cannot parse an eth_call result; shell bevo-rpc")
 
     def platform_balance(self, site, name, usd, account="", icon=None, positions=None):
         self.rows.append({"site": site, "name": name, "usd": usd, "account": account,
@@ -77,7 +76,20 @@ class FakeBevo:
         return list(self.platforms)
 
     def spawned(self, argv, **_kwargs):
-        """`subprocess.run`: records `bevo-platforms remove <id>` instead of running it."""
+        """`subprocess.run`: answers `bevo-rpc` and records `bevo-platforms remove <id>`.
+
+        `bevo-rpc` prints the eth_call result as a bare JSON string on stdout and
+        logs its endpoint on stderr, as the launcher does.
+        """
+        if argv[0] == "bevo-rpc":
+            self.rpcs.append((int(argv[1]), argv[2]))
+            call = json.loads(argv[3])[0]
+            try:
+                result = self.answers[0](call["to"], call["data"])
+            except BevoError as exc:
+                return subprocess.CompletedProcess(argv, 1, "", "[bevo-rpc] %s\n" % exc)
+            log = "[rpc] chain=%s endpoint=https://mainnet.base.org rotated=false\n" % argv[1]
+            return subprocess.CompletedProcess(argv, 0, json.dumps(result) + "\n", log)
         if list(argv[:2]) == ["bevo-platforms", "remove"]:
             self.removed.append(argv[2])
         return subprocess.CompletedProcess(argv, 0, "", "")

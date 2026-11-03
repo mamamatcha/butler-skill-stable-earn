@@ -1,6 +1,6 @@
 """Keep the owner's USDC lent on Aave (Base) on the wallet's Platforms tab.
 
-Each check reads the position on-chain through `bevo.rpc`: the wallet's aBasUSDC,
+Each check reads the position on-chain through `bevo-rpc`: the wallet's aBasUSDC,
 which is the USDC lent plus the interest it has earned, one for one, and the
 market's supply rate. While anything is lent there is one "Aave" row, keyed by
 the wallet, at that figure; once nothing is, the row is removed.
@@ -43,8 +43,24 @@ def word(address):
 
 
 def call(to, data):
-    """One eth_call on Base, as 32-byte words."""
-    result = bevo.rpc(BASE, "eth_call", [{"to": to, "data": data}, "latest"])
+    """One eth_call on Base, as 32-byte words.
+
+    Shelled rather than `bevo.rpc()`: `bevo-rpc` prints an eth_call's result as a
+    bare JSON string, and the SDK only accepts a JSON object, so `bevo.rpc()`
+    raises on every eth_call.
+    """
+    params = json.dumps([{"to": to, "data": data}, "latest"])
+    try:
+        done = subprocess.run(["bevo-rpc", str(BASE), "eth_call", params],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise bevo.BevoError("bevo-rpc: %s" % exc)
+    if done.returncode != 0:
+        raise bevo.BevoError("bevo-rpc: %s" % done.stderr.strip()[-200:])
+    try:
+        result = json.loads(done.stdout)
+    except ValueError:
+        raise bevo.BevoError("bevo-rpc answered %r" % done.stdout[:120])
     if not isinstance(result, str) or len(result) <= 2:
         raise bevo.BevoError("empty result from %s" % to)
     body = result[2:]

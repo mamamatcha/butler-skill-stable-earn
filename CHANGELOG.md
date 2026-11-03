@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- **The Aave Platforms row now appears.** `earn-account@2` reads Base by running
+  `bevo-rpc` itself; `@1`'s `bevo.rpc()` call failed on every `eth_call`, so no row
+  was written. Step 9 updates an `@1` duty to `@2` in place, and restarts an `@2` one.
+
 ## 0.3.0
 
 - **Their lending shows on the wallet's Platforms tab.** New duty template

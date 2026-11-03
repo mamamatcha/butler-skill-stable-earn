@@ -1,6 +1,9 @@
 {
   "id": "earn-account",
-  "version": 1,
+  "version": 2,
+  "supersedes": [
+    "earn-account@1"
+  ],
   "description": "Keep the owner's USDC lent on Aave (Base) on the wallet's Platforms tab.",
   "keywords": [
     "aave",

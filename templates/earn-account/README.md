@@ -4,11 +4,11 @@ Keeps the owner's USDC lent on Aave V3 (Base) on the wallet's Platforms tab: one
 
 ## How it is filed
 
-`{"recipe": "earn-account@1", "movesFunds": false, "title": "Aave lending", "triggers": [{"kind": "timer", "intervalSeconds": 900}], "params": {"WALLET": "<user.agentWalletAddress>"}}`. One per owner: a second writes the same row.
+`{"recipe": "earn-account@2", "movesFunds": false, "title": "Aave lending", "triggers": [{"kind": "timer", "intervalSeconds": 900}], "params": {"WALLET": "<user.agentWalletAddress>"}}`. One per owner: a second writes the same row. A duty on `@1` is updated in place with `duty_update {"recipe": "earn-account@2"}`.
 
 ## What it does
 
-It checks once when it starts, then on every tick, a random 0 to 60 seconds after the timer fires. Each check reads Base through `bevo.rpc`: Aave's address provider must name the pinned Pool, and the Pool must name the pinned aToken (aBasUSDC) for USDC, before the wallet's aBasUSDC balance and the reserve's supply rate are read. aBasUSDC is USDC lent plus its interest, one for one, so the balance is the row's value.
+It checks once when it starts, then on every tick, a random 0 to 60 seconds after the timer fires. Each check reads Base by running `bevo-rpc`: Aave's address provider must name the pinned Pool, and the Pool must name the pinned aToken (aBasUSDC) for USDC, before the wallet's aBasUSDC balance and the reserve's supply rate are read. aBasUSDC is USDC lent plus its interest, one for one, so the balance is the row's value.
 
 | The check reads | The row | Status line |
 | --- | --- | --- |

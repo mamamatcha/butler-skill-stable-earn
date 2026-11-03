@@ -6,7 +6,7 @@ from the owner's other stablecoins and chains first, shows what is earning, and
 withdraws it, and keeps an "Aave" row on the wallet's Platforms tab. This README is for the people maintaining the repo. A butler receives `SKILL.md` and the
 `references/*.md` and `scripts/*.py` files it names.
 
-- **Version:** 0.3.0 (`SKILL.md`). What changed in each release: `CHANGELOG.md`.
+- **Version:** 0.3.1 (`SKILL.md`). What changed in each release: `CHANGELOG.md`.
 - **Name:** `stable-earn`, listed in the skill hub with its duty template
   `earn-account` (`templates/earn-account/`). It requires no other skill.
 
@@ -81,7 +81,7 @@ its script. Send the line again to update; to switch to another repo or fork,
 `hub_remove stable-earn` first.
 
 Once the hub lists it, the butler installs it from the hub by name. Either way, step 9
-files `earn-account@1` from the hub's index, so the Platforms row needs the template
+files `earn-account@2` from the hub's index, so the Platforms row needs the template
 listed in butler-skills.
 
 ## How the pieces fit
@@ -94,7 +94,7 @@ listed in butler-skills.
 | Top-up | `acp trade --token-in <symbol> --chain-in <chain> --amount-in <n> --token-out usdc --chain-out <chain_id>`, first with `--dry-run`, then with `--idempotency-key <KEY>:topup-<n> --json` | Moves other cash into USDC on the venue's chain, to the owner's own wallet. Looked up with `bevo-read request <KEY>:topup-<n> --route trade`. |
 | Sending | `acp wallet send-transaction --chain-id <chain_id> ... --idempotency-key <KEY>:<op> --json` | One approval card per transaction, on the chain the helper names. `asked: true` means a card is up. |
 | Outcome | `bevo-read request <KEY>:<op> --route execute` | Whether a send executed. A retry is always this lookup, never a second send. |
-| Platforms row | `templates/earn-account/`, filed with `duty_create {"recipe": "earn-account@1", ...}`, restarted with `bevo-automation disable` + `enable` | A read-only duty: checks once as it starts and every 15 minutes, reading the position on Base through `bevo.rpc`, and writes or removes the one "Aave" row. The only writer of that row. |
+| Platforms row | `templates/earn-account/`, filed with `duty_create {"recipe": "earn-account@2", ...}`, restarted with `bevo-automation disable` + `enable` | A read-only duty: checks once as it starts and every 15 minutes, reading the position on Base through `bevo-rpc`, and writes or removes the one "Aave" row. The only writer of that row. |
 
 ## Safety model
 

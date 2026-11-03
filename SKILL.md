@@ -1,7 +1,7 @@
 ---
 name: stable-earn
 description: Earn interest on idle stablecoins by lending them as USDC on Aave (Base) - for asks like what is my USDC earning, lend $2k but keep $500 free, can I get it out today, or pull it all out.
-version: 0.3.0
+version: 0.3.1
 metadata: {"butler":{"moneyMoving":true,"keywords":["earn interest","earn interest on usdc","interest on my usdc","earn on my usdc","earn on idle usdc","idle usdc","idle stables","idle cash","my stables to work","make my money work","earn on my cash","stablecoin yield","stablecoin interest","stablecoins interest","earn on stablecoins","best yield on usdc","best yield on stablecoins","usdc yield","usdc apy","usdc interest rate","passive income on usdc","lend usdc","lend my usdc","usdc lending","earn on usdt","usdt yield","lend usdt","aave","aave usdc","lend on aave","deposit usdc to aave","supply usdc to aave","withdraw from aave","stable earn","earn","savings","usdc savings","how much am i earning","my earn balance","withdraw from earn","withdraw my savings","low risk yield","safest yield"],"requires":{"bins":["acp","bevo-automation","bevo-read","python3"]}}}
 ---
 
@@ -63,7 +63,7 @@ rates, or yield on anything but dollars.
    acp wallet balance --json
    ```
 
-   `earning_usdc` above 0 and no `earn-account` duty in `duty_list`: file it (step 9).
+   `earning_usdc` above 0 and no `earn-account` duty in `duty_list`, or one on `@1`: step 9.
 
 3. [ADAPT] Plan. Supplying more than `wallet_usdc` needs a top-up:
    - Sources, in order: `spot.tokens` rows with `symbol` USDC, USDT or USDG, `verified`
@@ -123,10 +123,11 @@ rates, or yield on anything but dollars.
    With no `earn-account` duty in `duty_list` and something lent, `duty_create`:
 
    ```json
-   {"recipe": "earn-account@1", "movesFunds": false, "title": "Aave lending", "triggers": [{"kind": "timer", "intervalSeconds": 900}], "params": {"WALLET": "<ADDRESS>"}}
+   {"recipe": "earn-account@2", "movesFunds": false, "title": "Aave lending", "triggers": [{"kind": "timer", "intervalSeconds": 900}], "params": {"WALLET": "<ADDRESS>"}}
    ```
 
-   With one, restart it; it re-reads the position as it starts:
+   With one on `@1`, `duty_update` it with this recipe. With one on `@2`, restart it; it
+   re-reads the position as it starts:
 
    ```sh
    bevo-automation disable <id>
