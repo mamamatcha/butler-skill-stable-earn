@@ -3,11 +3,15 @@
     python3 aave.py status <ADDRESS>
     python3 aave.py supply <ADDRESS> <AMOUNT>
     python3 aave.py withdraw <ADDRESS> <AMOUNT|all>
+    python3 aave.py quote <ADDRESS> <AMOUNT> [FEE]
 
-Prints one JSON object and never sends anything; SKILL.md step 4 sends `txs`.
+Prints one JSON object and never sends anything; SKILL.md step 7 sends `txs`.
 Fields: references/aave.md.
+
+`status` also restarts the owner's earn-account duty, so the Platforms row re-reads
+the position now rather than at its next tick, and says how that went in `row`.
 """
-import json, re, sys, urllib.request
+import json, re, subprocess, sys, urllib.request
 from decimal import Decimal
 RPCS = ["https://mainnet.base.org", "https://base-rpc.publicnode.com"]
 # Pinned: a moved branch must never move the contracts the owner approves.
@@ -57,7 +61,7 @@ def units(x):
     return v
 args = sys.argv[1:] + ["", "", ""]
 cmd, owner, arg = args[0], args[1], args[2]
-if cmd not in ("status", "supply", "withdraw"):
+if cmd not in ("status", "supply", "withdraw", "quote"):
     out({"error": "bad_command"})
 if not re.fullmatch(HEX40, owner):
     out({"error": "bad_address"})
@@ -82,8 +86,72 @@ s = {"venue": "aave", "chain_id": 8453,
      "est_week_usd": round(earning / 1e6 * APY(rd[2]) / 100 / 52, 2),
      "active": bool(cfg >> 56 & 1), "frozen": bool(cfg >> 57 & 1), "paused": bool(cfg >> 60 & 1),
      "cap_room_usdc": None if cap == 0 else max(0, cap * 10**6 - supply) / 1e6}
+def automation(*a):
+    r = subprocess.run(["bevo-automation", *a], capture_output=True, text=True, timeout=30)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout).strip()[-200:])
+    return r.stdout
+def row():
+    """Restart the earn-account@2 duty, or turn it on if it was off; it re-reads the
+    position as it starts.
+
+    Done here rather than left to SKILL.md step 9 because the model, resuming a
+    supply in a later turn, re-ran status and stopped, leaving the row stale.
+    """
+    try:
+        duties = [d for d in json.loads(automation("list")).get("duties", [])
+                  if str(d.get("recipe", "")).startswith("earn-account@")]
+    except Exception as e:
+        return {"row": "unknown", "row_detail": str(e)[:200]}
+    if not duties:
+        return {"row": "no_duty"}
+    current = [d for d in duties if d.get("recipe") == "earn-account@2"]
+    if not current:
+        return {"row": "old_recipe", "duty_id": duties[0]["id"]}
+    d = next((d for d in current if d.get("state") == "live"), current[0])
+    if d.get("state") == "pending":
+        return {"row": "pending", "duty_id": d["id"]}
+    was_live = d.get("state") == "live"
+    if was_live:
+        try:
+            automation("disable", d["id"])
+        except Exception as e:
+            return {"row": "restart_failed", "duty_id": d["id"], "row_detail": str(e)[:200]}
+    for _ in range(2):
+        try:
+            automation("enable", d["id"])
+            return {"row": "restarted" if was_live else "turned_on", "duty_id": d["id"]}
+        except Exception as e:
+            err = str(e)[:200]
+    return {"row": "left_off", "duty_id": d["id"], "row_detail": err}
+if cmd == "quote":
+    amt = units(arg) / 1e6
+    try:
+        fee = float(Decimal(args[3] or "0"))
+    except Exception:
+        out({"error": "bad_amount"})
+    if fee < 0:
+        out({"error": "bad_amount"})
+    week = lambda x: x * s["apy_pct"] / 100 / 52
+    now = earning / 1e6
+    total = now + amt
+    q = {"lend_usdc": amt, "apy_pct": s["apy_pct"], "earning_now_usdc": round(now, 2),
+         "est_week_usd": round(week(amt), 4), "est_month_usd": round(week(amt) * 52 / 12, 4),
+         "earning_after_usdc": round(total, 2), "est_week_after_usd": round(week(total), 4),
+         "est_month_after_usd": round(week(total) * 52 / 12, 4),
+         "fee_usd": fee, "fee_weeks": round(fee / week(amt), 1) if fee and amt else 0}
+    c = lambda x: "$%.2f" % x if x >= 0.1 else "%.1f cents" % (x * 100)
+    lines = ["Lending $%.2f at %.2f%% (variable) earns about %s a week, %s a month." % (
+                 amt, s["apy_pct"], c(q["est_week_usd"]), c(q["est_month_usd"])),
+             "With the $%.2f already lent, $%.2f would be earning: about %s a week, %s a month." % (
+                 q["earning_now_usdc"], q["earning_after_usdc"], c(q["est_week_after_usd"]), c(q["est_month_after_usd"]))]
+    if q["fee_weeks"]:
+        w = q["fee_weeks"]
+        span = "" if w < 4 else " (about %s months)" % round(w / 4.33, 1) if w < 52 else " (about %s years)" % round(w / 52, 1)
+        lines.append("The $%.2f of fees is about %s weeks%s of the new $%.2f's interest: that long before the move pays for itself." % (fee, w, span, amt))
+    out({**q, "summary": "\n".join("- " + l for l in lines)})
 if cmd == "status":
-    out(s)
+    out({**s, **row()})
 if cmd == "supply":
     amt = units(arg)
     if not s["active"] or s["frozen"] or s["paused"]:

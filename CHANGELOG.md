@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.4.0
+
+- **The plan is the trading bot's, and the owner reads it as it wrote it.** Moving cash
+  to Base is now one same-chain `acp trade` (USDC to USDC on Base), which the trading
+  bot plans as a cash move: only what the chain is missing plus fee headroom, never
+  taxed, one approval card. Its `--dry-run` `summary` names each move, about what
+  arrives, the fees, what Base then holds and the cash left on each chain; step 4
+  quotes it as written, with no figure of Butler's own around it. In 0.3.1 the skill
+  carried its own source order and fee rules (which already disagreed with the bot's)
+  and Butler worked the figures out: Elise's "all but $5" plan read "$7.03 = $2 +
+  $5.03 + $4.75" and moved $0.32, under the $2 minimum. On the eval harness the quoted
+  plan was right 60 times in 60, against 9 in 20 before.
+- **`aave.py quote <ADDRESS> <AMOUNT> <FEE>`** says what the amount earns at today's
+  rate, alone and with what is already lent, and how many weeks of that interest the
+  fee costs, as lines to quote. Step 3 sizes "keep $Y free" and "half" with a fixed
+  `jq` on `cashUsd`, never Butler's arithmetic.
+- **A move is filed only after a yes in a later message**, and is called moving cash,
+  never a top-up: `acp wallet topup` is the card on-ramp.
+
+- **The Platforms row updates after every supply and withdrawal, not only the first.**
+  `scripts/aave.py status` now restarts the owner's live `earn-account@2` duty itself
+  (`bevo-automation list`, then `disable` and `enable`), turns it back on if it was
+  off, and says how it went in `row`: `restarted`, `turned_on`, `no_duty`,
+  `old_recipe`, `pending`, `left_off`, `restart_failed` or `unknown`. In 0.3.1 the restart was step 9's to run, and a model resuming a supply in
+  a later turn re-ran `status` and stopped: the row stayed at the first $1 while $17 more
+  was lent, and kept $16 after everything was withdrawn, counting it twice. Step 9 now
+  acts on `row`. A duty not yet armed is left alone.
+- **`cashUsd` is described as bevo-server counts it.** Verified stablecoins at $1, from
+  1¢ on Base and $2 or more on any other chain, plus free Hyperliquid USDC of $2 or
+  more; a smaller balance is in no total and is never planned with. What "keep $X free"
+  leaves can sit on Hyperliquid.
+
 ## 0.3.1
 
 - **The Aave Platforms row now appears.** `earn-account@2` reads Base by running
