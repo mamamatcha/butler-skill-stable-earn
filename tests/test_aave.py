@@ -67,7 +67,30 @@ class Chain:
         raise AssertionError(f"unexpected call {to} {data}")
 
 
-def run(chain, *args):
+class Automation:
+    """A stub `bevo-automation`: answers `list` with these duties, records every call."""
+
+    def __init__(self, duties=(), fail=()):
+        self.duties = list(duties)
+        self.fail = set(fail)
+        self.calls = []
+
+    def __call__(self, argv, **kw):
+        assert argv[0] == "bevo-automation", argv
+        self.calls.append(argv[1:])
+        res = mock.MagicMock(returncode=0, stdout="", stderr="")
+        if argv[1] in self.fail:
+            res.returncode, res.stderr = 1, "%s refused" % argv[1]
+        elif argv[1] == "list":
+            res.stdout = json.dumps({"duties": self.duties}, indent=2)
+        return res
+
+
+DUTY = "bdf2fcf7-fd35-41a9-9986-b11865da68b9"
+
+
+def run(chain, *args, automation=None):
+    automation = automation or Automation()
     def urlopen(req, timeout=None):
         if req.data is None:
             body = BOOK
@@ -79,7 +102,8 @@ def run(chain, *args):
         return res
 
     stdout = io.StringIO()
-    with mock.patch("urllib.request.urlopen", urlopen), mock.patch.object(sys, "argv", [SCRIPT, *args]):
+    with mock.patch("urllib.request.urlopen", urlopen), mock.patch.object(sys, "argv", [SCRIPT, *args]), \
+            mock.patch("subprocess.run", automation):
         with contextlib.redirect_stdout(stdout), contextlib.suppress(SystemExit):
             runpy.run_path(SCRIPT, run_name="__main__")
     return json.loads(stdout.getvalue())
@@ -114,6 +138,90 @@ class Status(unittest.TestCase):
 
     def test_refuses_an_atoken_the_pool_does_not_name(self):
         self.assertEqual(run(Chain(atoken=OWNER), "status", OWNER), {"error": "address_mismatch"})
+
+
+class Quote(unittest.TestCase):
+    def test_says_what_the_amount_earns_and_what_the_fee_costs(self):
+        bot = Automation()
+        q = run(Chain(), "quote", OWNER, "10", "0.06", automation=bot)
+        self.assertNotIn("error", q)
+        self.assertEqual((q["lend_usdc"], q["earning_now_usdc"], q["earning_after_usdc"]), (10.0, 20.0, 30.0))
+        self.assertAlmostEqual(q["est_week_usd"], 10 * 5.13 / 100 / 52, places=3)
+        self.assertAlmostEqual(q["fee_weeks"], 6.1, places=1)
+        self.assertEqual(q["summary"].split("\n"), [
+            "- Lending $10.00 at 5.13% (variable) earns about 1.0 cents a week, 4.3 cents a month.",
+            "- With the $20.00 already lent, $30.00 would be earning: about 3.0 cents a week, $0.13 a month.",
+            "- The $0.06 of fees is about 6.1 weeks (about 1.4 months) of the new $10.00's interest:"
+            " that long before the move pays for itself.",
+        ])
+        self.assertEqual(bot.calls, [])
+
+    def test_no_fee_line_without_a_move(self):
+        q = run(Chain(), "quote", OWNER, "10")
+        self.assertEqual((q["fee_usd"], q["fee_weeks"]), (0, 0))
+        self.assertEqual(len(q["summary"].split("\n")), 2)
+
+    def test_refuses_a_bad_amount_or_fee(self):
+        for args in [("0",), ("lots",), ("10", "$0.06"), ("10", "-1")]:
+            self.assertEqual(run(Chain(), "quote", OWNER, *args)["error"], "bad_amount", args)
+
+
+class Row(unittest.TestCase):
+    def duty(self, recipe="earn-account@2", state="live", id=DUTY):
+        return {"id": id, "name": "earn-account-aave", "mode": "code", "recipe": recipe, "state": state}
+
+    def test_status_restarts_the_live_duty(self):
+        bot = Automation([{"id": "x", "name": "btc-dca", "state": "live"}, self.duty()])
+        s = run(Chain(), "status", OWNER, automation=bot)
+        self.assertEqual((s["row"], s["duty_id"]), ("restarted", DUTY))
+        self.assertEqual(bot.calls, [["list"], ["disable", DUTY], ["enable", DUTY]])
+
+    def test_says_when_there_is_no_duty(self):
+        bot = Automation([{"id": "x", "name": "btc-dca", "state": "live"}])
+        self.assertEqual(run(Chain(), "status", OWNER, automation=bot)["row"], "no_duty")
+        self.assertEqual(bot.calls, [["list"]])
+
+    def test_names_a_duty_still_on_the_old_recipe(self):
+        bot = Automation([self.duty(recipe="earn-account@1")])
+        s = run(Chain(), "status", OWNER, automation=bot)
+        self.assertEqual((s["row"], s["duty_id"]), ("old_recipe", DUTY))
+        self.assertEqual(bot.calls, [["list"]])
+
+    def test_turns_a_duty_that_is_off_back_on(self):
+        bot = Automation([self.duty(state="disabled")])
+        s = run(Chain(), "status", OWNER, automation=bot)
+        self.assertEqual((s["row"], s["duty_id"]), ("turned_on", DUTY))
+        self.assertEqual(bot.calls, [["list"], ["enable", DUTY]])
+
+    def test_says_when_a_duty_that_is_off_would_not_turn_on(self):
+        bot = Automation([self.duty(state="disabled")], fail={"enable"})
+        self.assertEqual(run(Chain(), "status", OWNER, automation=bot)["row"], "left_off")
+
+    def test_prefers_the_live_duty_when_there_are_two(self):
+        bot = Automation([self.duty(state="disabled", id="off"), self.duty()])
+        self.assertEqual(run(Chain(), "status", OWNER, automation=bot)["row"], "restarted")
+        self.assertEqual(bot.calls, [["list"], ["disable", DUTY], ["enable", DUTY]])
+
+    def test_leaves_a_duty_not_yet_armed_alone(self):
+        bot = Automation([self.duty(state="pending")])
+        self.assertEqual(run(Chain(), "status", OWNER, automation=bot)["row"], "pending")
+        self.assertEqual(bot.calls, [["list"]])
+
+    def test_says_when_a_restart_left_the_duty_off(self):
+        bot = Automation([self.duty()], fail={"enable"})
+        s = run(Chain(), "status", OWNER, automation=bot)
+        self.assertEqual((s["row"], s["duty_id"]), ("left_off", DUTY))
+        self.assertEqual(bot.calls, [["list"], ["disable", DUTY], ["enable", DUTY], ["enable", DUTY]])
+
+    def test_an_unreadable_duty_list_still_answers_the_status(self):
+        s = run(Chain(), "status", OWNER, automation=Automation(fail={"list"}))
+        self.assertEqual((s["row"], s["earning_usdc"]), ("unknown", 20.0))
+
+    def test_building_transactions_touches_no_duty(self):
+        bot = Automation([self.duty()])
+        for args in [("supply", OWNER, "1"), ("withdraw", OWNER, "all")]:
+            self.assertNotIn("row", run(Chain(), *args, automation=bot))
+        self.assertEqual(bot.calls, [])
 
 
 class Supply(unittest.TestCase):

@@ -1,6 +1,6 @@
 # earn-account
 
-Keeps the owner's USDC lent on Aave V3 (Base) on the wallet's Platforms tab: one "Aave" row, keyed by the wallet, at what is lent there now, interest included, with the variable APY and about a week's interest. The stable-earn skill files it after the owner's first supply, and restarts it after each later supply or withdrawal so the row updates at once. It is the only writer of that row.
+Keeps the owner's USDC lent on Aave V3 (Base) on the wallet's Platforms tab: one "Aave" row, keyed by the wallet, at what is lent there now, interest included, with the variable APY and about a week's interest. The stable-earn skill files it after the owner's first supply. Its `scripts/aave.py status`, which the skill runs to confirm every supply and withdrawal, restarts it, so the row updates within seconds. It is the only writer of that row.
 
 ## How it is filed
 
@@ -26,4 +26,4 @@ It checks once when it starts, then on every tick, a random 0 to 60 seconds afte
 
 ## Trigger
 
-`{"kind": "timer", "intervalSeconds": 900}`. Between restarts, the row catches up with accrued interest, a change of rate, or a supply or withdrawal made elsewhere, within about 15 minutes.
+`{"kind": "timer", "intervalSeconds": 900}`. Between restarts, the row catches up with accrued interest, a change of rate, or a supply or withdrawal made outside the skill, within about 15 minutes.

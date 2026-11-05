@@ -7,7 +7,7 @@ USDC they mean is already lent there.
 ## The market
 
 Aave V3's USDC market on **Base** (chain `8453`), native USDC only: other stablecoins,
-and USDC on other chains, are moved into it first (`SKILL.md` step 5). Lenders get aUSDC,
+and USDC on other chains, are moved to Base first (`SKILL.md` steps 3 and 5). Lenders get aUSDC,
 whose balance grows every block as interest arrives: nothing to claim, nothing locked.
 The rate is variable, set by how much of the pool is borrowed, and moves block by block.
 
@@ -28,6 +28,9 @@ Every venue's script answers with these:
 | `allowance_usdc` | what the Pool may already take from the wallet |
 | `est_week_usd` | a week at today's rate on what is lent; never an "earned so far" |
 | `txs` | `supply` / `withdraw` only: the transactions to send, in order |
+| `summary` | `quote` only: what lending the amount earns, and what the move's fee costs in weeks of it, as lines to copy as written; `SKILL.md` step 4 |
+| `est_week_usd`, `est_month_usd`, `fee_weeks` | `quote` only: the same figures as fields; `fee_weeks` above about 13 is a costly move |
+| `row`, `duty_id` | `status` only: what restarting their `earn-account` duty did, so the Platforms row re-reads now; `SKILL.md` step 9 |
 | `error` | why nothing was built; `SKILL.md` "Failure handling" |
 
 Aave's own: `utilization_pct`, the share of the pool lent out, and `active`, `frozen`,
@@ -65,12 +68,13 @@ whenever the pool has room."
 When `utilization_pct` is high: "Almost all of Aave's USDC is lent out right now, so a
 large withdrawal could wait a few hours. Rates are higher while that lasts."
 
-With a top-up: "You have $2,340 in cash. To lend 2,000 on Aave, 1,200 is already USDC on
-Base, and 800 USDT on Arbitrum becomes USDC on Base first (about $1.20 in fees). Then
-it earns about 3.9% today, variable. Two cards to approve. Go ahead?"
+When cash moves to Base first: one sentence ("Here's the plan, nothing filed yet."),
+then the preview's `summary` and `quote`'s `summary` as written, then the risks and the
+question. The figures are theirs, never yours.
 
-A top-up costing more than it earns soon: "Moving that $5 would cost about $1.20, more
-than a year of its interest. I can lend the 30 USDC already on Base instead."
+A move whose fees cost more than about 13 weeks of the interest: "Moving that cash costs
+more in fees than it earns for a while. I can lend just what is already on Base
+instead."
 
 After adding: "Done: 2,000 USDC is now earning about 3.9% (variable) on Aave. That's
 roughly $1.50 a week at today's rate. It shows as Aave under Platforms in your wallet.
